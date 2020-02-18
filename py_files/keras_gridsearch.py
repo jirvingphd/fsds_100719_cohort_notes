@@ -110,25 +110,51 @@ def plot_confusion_matrix(conf_matrix, classes = None, normalize=True,
     return fig
 
 
+# def plot_keras_history(history,figsize=(10,4),subplot_kws={}):
+#     if hasattr(history,'history'):
+#         history=history.history
+#     #     history = results.history
+#     fig,axes=plt.subplots(ncols=2,figsize=figsize,**subplot_kws)
+    
+#     ax=axes[0]
+#     ax.plot(history['val_loss'],label='val_loss')
+#     ax.plot(history['loss'], label='loss')
+#     ax.legend()
+    
+#     ax=axes[1]
+#     ax.plot(history['val_accuracy'],label='val_accuracy')
+#     ax.plot(history['accuracy'], label='accuracy')
+
+#     ax.legend()
+    
+#     plt.tight_layout()
+#     plt.show()
 def plot_keras_history(history,figsize=(10,4),subplot_kws={}):
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
     if hasattr(history,'history'):
         history=history.history
-    #     history = results.history
-    fig,axes=plt.subplots(ncols=2,figsize=figsize,**subplot_kws)
-    
-    ax=axes[0]
-    ax.plot(history['val_loss'],label='val_loss')
-    ax.plot(history['loss'], label='loss')
-    ax.legend()
-    
-    ax=axes[1]
-    ax.plot(history['val_accuracy'],label='val_accuracy')
-    ax.plot(history['accuracy'], label='accuracy')
+    figsize=(10,4)
+    subplot_kws={}
 
-    ax.legend()
-    
+    acc_keys = list(filter(lambda x: 'acc' in x,history.keys()))
+    loss_keys = list(filter(lambda x: 'loss' in x,history.keys()))
+
+    fig,axes=plt.subplots(ncols=2,figsize=figsize,**subplot_kws)
+    axes = axes.flatten()
+
+    y_labels= ['Accuracy','Loss']
+    for a, metric in enumerate([acc_keys,loss_keys]):
+        for i in range(len(metric)):
+            ax = pd.Series(history[metric[i]],
+                        name=metric[i]).plot(ax=axes[a],label=metric[i])
+    [ax.legend() for ax in axes]
+    [ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True)) for ax in axes]
+    [ax.set(xlabel='Epochs') for ax in axes]
+    plt.suptitle('Model Training Results',y=1.01)
     plt.tight_layout()
     plt.show()
+
     
     
 def evaluate_model(y_true, y_pred,history=None):
@@ -339,3 +365,88 @@ def prepare_gridsearch_report(grid_search,X_test,y_test,
         print(f"[!] ERROR saving figure:\n\t{e}")
         
     return txt#,fig
+
+
+
+
+
+# checkpoint
+from keras.callbacks import ModelCheckpoint, EarlyStopping, CSVLogger
+
+def create_csvlogger(filename):
+    return CSVLogger(filename, separator=',', append=False)
+
+def create_checkpoint(monitor='val_acc',model_subfolder='Datasets/Models/cat_vs_dog/'):
+    filepath=model_subfolder+"weights-improvement-{epoch:02d}-{"+monitor+":.2f}.hdf5"
+    checkpoint = ModelCheckpoint(filepath, monitor=monitor, verbose=1, save_best_only=True, mode='max')
+    return checkpoint
+
+def create_early_stopping(monitor = 'val_acc',min_delta = 0, patience = 1,
+                          verbose = 1, restore_best_weights = True):
+
+    args = locals()
+    earlystop = EarlyStopping(**args)
+    return earlystop
+
+
+def save_model(model,model_subfolder = 'Datasets/Models/cat_vs_dog/',
+               base_modelname = 'CNN_cat_dog_02142020', as_json=True,
+               return_fpaths=True,verbose=True):
+    import os
+    ## To save to Gdrive, must first chdir to My Drive (so there's no spaces in fpath)
+    curdir = os.path.abspath(os.curdir)
+
+    gdrive_folder =r'/gdrive/My Drive/'
+    model_subfolder = 'Datasets/Models/cat_vs_dog/'
+
+    try:
+        os.chdir(gdrive_folder)
+        os.makedirs(model_subfolder,exist_ok=True)
+    except Exception as e:
+        print(f'ERROR: {e}')
+
+    # os.listdir(model_subfolder)
+    # https://jovianlin.io/saving-loading-keras-models/
+    try:
+        weight_fpath = model_subfolder+base_modelname+'_weights.h5'
+        model.save_weights(weight_fpath, overwrite=True)
+
+        if as_json:
+            model_fpath = model_subfolder+base_modelname+'_model.json'
+            # Save the model architecture
+            with open(model_fpath, 'w') as f:
+                f.write(model.to_json())
+        else:
+            model_fpath = model_subfolder+base_modelname+'_model.h5'
+            model.save(model_fpath)
+        if verbose: 
+            print(f"[io] Model architecture saved as {model_fpath}")
+            print(f"[io] Model weights saved as {weight_fpath}")
+        else:
+            print(f"[io] Successfully saved model.")
+
+    except Exception as e:
+        import warnings
+        warnings.warn(f"ERROR SAVING: {e}")
+    if return_fpaths:
+        return model_fpath, weight_fpath
+
+
+
+def load_model(model_fpath,weight_fpath=None,as_json=True):
+    from IPython.display import display
+    from keras.models import model_from_json
+    if (as_json == True) & (weight_fpath is None):
+        raise Exception('If using as_json=True, must provide ')
+
+    # Model reconstruction from JSON file
+    with open(model_fpath, 'r',encoding="utf8") as f:
+        model2 = model_from_json(f.read())
+
+    # Load weights into the new model
+    model2.load_weights(weight_fpath)
+    display(model2.summary())
+    return model2
+
+# model_fpath,weight_fpath = save_model(model)
+# model_loaded = load_model(model_fpath,weight_fpath)
